@@ -37,7 +37,7 @@ Built with **Electron + vanilla JS**. No frameworks, no build step for the UI, n
 
 ### Workspaces
 - **Projects** — top-level container for tasks/meetings/follow-ups/notes/expenses. Pick a project from the header dropdown to filter the entire app to that work. Eight color choices per project.
-- **Budget tracker** — log expenses with amount, currency, category, date, optional project link. Automatic monthly total + breakdown by category. Filter by this-month or all-time.
+- **Budget tracker** — log expenses with amount, currency (defaults to **OMR**, editable per entry), category, date, optional project link. Automatic monthly total + breakdown by category. Filter by this-month or all-time.
 
 ### Insight
 - **Manager scorecard** — 6 colored KPI cards: meeting hours (7d), task completion rate (30d), avg follow-up close time, time spent on goals (tasks tagged `goal`), open tasks, overdue tasks. All KPIs respect the active project filter.

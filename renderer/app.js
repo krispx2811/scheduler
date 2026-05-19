@@ -1361,7 +1361,7 @@ function renderExpenses() {
     const cat = e.category || (I18N.getLang() === 'ar' ? 'بدون فئة' : 'Uncategorised');
     byCat[cat] = (byCat[cat] || 0) + (Number(e.amount) || 0);
   }
-  const currency = list[0]?.currency || 'SAR';
+  const currency = list[0]?.currency || 'OMR';
   const totalLabel = state.budgetFilter === 'month' ? t('budget.month') : t('budget.all');
   const catsHTML = Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, a]) => `
     <div class="budget-cat-row">
@@ -1385,7 +1385,7 @@ function renderExpenses() {
     li.className = 'expense-item';
     const p = projectById(e.projectId);
     li.innerHTML = `
-      <span class="expense-amount">${Number(e.amount).toLocaleString(I18N.locale(), { maximumFractionDigits: 2 })} ${escapeHTML(e.currency || 'SAR')}</span>
+      <span class="expense-amount">${Number(e.amount).toLocaleString(I18N.locale(), { maximumFractionDigits: 2 })} ${escapeHTML(e.currency || 'OMR')}</span>
       <span class="expense-cat">${escapeHTML(e.category || (I18N.getLang() === 'ar' ? 'بدون فئة' : 'Uncategorised'))}</span>
       <div class="expense-meta">
         <div>${escapeHTML(e.description || '')}</div>
@@ -1406,11 +1406,11 @@ function renderExpenses() {
 
 function openExpenseModal(e) {
   const isEdit = !!e;
-  const obj = e || { amount: '', currency: 'SAR', category: '', date: todayISO(), description: '', projectId: state.activeProjectId };
+  const obj = e || { amount: '', currency: 'OMR', category: '', date: todayISO(), description: '', projectId: state.activeProjectId };
   openModal(isEdit ? t('budget.edit') : t('budget.add'), `
     <div class="field-row">
       <div class="field"><label>${t('budget.amount')}</label><input id="f-amount" type="number" step="0.01" value="${escapeAttr(obj.amount)}"></div>
-      <div class="field"><label>${t('budget.currency')}</label><input id="f-currency" type="text" value="${escapeAttr(obj.currency || 'SAR')}"></div>
+      <div class="field"><label>${t('budget.currency')}</label><input id="f-currency" type="text" value="${escapeAttr(obj.currency || 'OMR')}"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>${t('budget.category')}</label><input id="f-category" type="text" value="${escapeAttr(obj.category || '')}" placeholder="${I18N.getLang() === 'ar' ? 'مكتب، سفر، طعام...' : 'Office, Travel, Food...'}"></div>
@@ -1423,7 +1423,7 @@ function openExpenseModal(e) {
     { label: isEdit ? t('action.save') : t('action.add'), class: 'btn-primary', onClick: async () => {
         const amount = parseFloat(document.getElementById('f-amount').value);
         if (!amount || isNaN(amount)) { toast(t('budget.amountRequired')); return; }
-        const currency = document.getElementById('f-currency').value.trim() || 'SAR';
+        const currency = document.getElementById('f-currency').value.trim() || 'OMR';
         const category = document.getElementById('f-category').value.trim();
         const date = document.getElementById('f-date').value || todayISO();
         const description = document.getElementById('f-description').value.trim();

@@ -1,6 +1,6 @@
 {
   "name": "scheduler",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Scheduler — personal productivity dashboard for tasks, meetings, team follow-ups and notes",
   "main": "main.js",
   "author": {
