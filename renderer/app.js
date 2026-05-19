@@ -34,16 +34,20 @@ const storage = {
 
 // ---------- State ----------
 const state = {
-  data: { tasks: [], meetings: [], teamMembers: [], followUps: [], notes: [] },
+  data: { tasks: [], meetings: [], teamMembers: [], followUps: [], notes: [], projects: [], expenses: [] },
   activeTab: 'tasks',
   taskFilter: 'all',
+  budgetFilter: 'month',
   calendarMonth: new Date(),
   selectedDate: new Date(),
   searchQuery: '',
   recording: null,
   selectedTaskIds: new Set(),
   lastClickedTaskId: null,
+  activeProjectId: localStorage.getItem('scheduler-active-project') || '',  // '' = all
 };
+
+const PROJECT_COLORS = ['#e88869','#7ba3d9','#b48cd0','#7eb88d','#f5b85a','#e08ab0','#7fcfd4','#ce9eb2'];
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -185,20 +189,25 @@ document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () 
 function switchTab(tab) {
   state.activeTab = tab;
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
-  ['tasks', 'meetings', 'team', 'notes', 'stats'].forEach((n) => {
+  ['tasks', 'meetings', 'team', 'notes', 'projects', 'budget', 'stats'].forEach((n) => {
     document.getElementById('panel-' + n).classList.toggle('hidden', n !== tab);
   });
   if (tab === 'meetings') renderCalendar();
-  if (tab === 'stats') renderStats();
+  if (tab === 'stats') { renderStats(); renderScorecard(); }
+  if (tab === 'projects') renderProjects();
+  if (tab === 'budget') renderExpenses();
 }
 
 // ---------- Counters ----------
 function updateCounters() {
   const today = todayISO();
-  document.getElementById('stat-today').textContent     = state.data.tasks.filter((t) => t.dueDate === today && t.status !== 'done').length;
-  document.getElementById('stat-pending').textContent   = state.data.tasks.filter((t) => t.status !== 'done').length;
-  document.getElementById('stat-meetings').textContent  = state.data.meetings.filter((m) => new Date(m.start) >= new Date()).length;
-  document.getElementById('stat-followups').textContent = state.data.followUps.filter((f) => f.status !== 'done').length;
+  const tasks = state.data.tasks.filter(inActiveProject);
+  const meetings = state.data.meetings.filter(inActiveProject);
+  const followUps = state.data.followUps.filter(inActiveProject);
+  document.getElementById('stat-today').textContent     = tasks.filter((t) => t.dueDate === today && t.status !== 'done').length;
+  document.getElementById('stat-pending').textContent   = tasks.filter((t) => t.status !== 'done').length;
+  document.getElementById('stat-meetings').textContent  = meetings.filter((m) => new Date(m.start) >= new Date()).length;
+  document.getElementById('stat-followups').textContent = followUps.filter((f) => f.status !== 'done').length;
 }
 
 // ============================================================
@@ -220,7 +229,7 @@ document.getElementById('btn-add-task').addEventListener('click', () => openTask
 
 function filteredTasks() {
   const today = todayISO();
-  return state.data.tasks.filter((tk) => {
+  return state.data.tasks.filter(inActiveProject).filter((tk) => {
     switch (state.taskFilter) {
       case 'today': return tk.dueDate === today;
       case 'pending': return tk.status !== 'done';
@@ -413,7 +422,7 @@ function renderTaskItem(tk) {
 
 function openTaskModal(task) {
   const isEdit = !!task;
-  const tk = task || { title: '', description: '', priority: 'medium', dueDate: todayISO(), tags: [], subtasks: [], recurring: 'none' };
+  const tk = task || { title: '', description: '', priority: 'medium', dueDate: todayISO(), tags: [], subtasks: [], recurring: 'none', projectId: state.activeProjectId };
   const subtasksHTML = (tk.subtasks || []).map((s) => subtaskEditorHTML(s.id, s.title)).join('');
 
   openModal(isEdit ? t('modal.task.edit') : t('modal.task.add'), `
@@ -445,6 +454,7 @@ function openTaskModal(task) {
       <div id="subtask-list">${subtasksHTML}</div>
       <button type="button" class="btn btn-outline" id="btn-add-sub" style="align-self: flex-start;">${t('form.addSubtask')}</button>
     </div>
+    ${projectSelectHTML(tk.projectId)}
   `, [
     { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
     { label: isEdit ? t('action.save') : t('action.add'), class: 'btn-primary', onClick: async () => {
@@ -455,15 +465,16 @@ function openTaskModal(task) {
         const dueDate = document.getElementById('f-due').value || null;
         const tags = document.getElementById('f-tags').value.split(/[,،]/).map(s => s.trim()).filter(Boolean);
         const recurring = document.getElementById('f-recurring').value;
+        const projectId = document.getElementById('f-project').value || undefined;
         const subtasks = [...document.querySelectorAll('#subtask-list .subtask-editor')].map((row) => ({
           id: row.dataset.id,
           title: row.querySelector('input[type="text"]').value.trim(),
           done: row.querySelector('input[type="checkbox"]').checked,
         })).filter((s) => s.title);
 
-        if (isEdit) Object.assign(task, { title, description, priority, dueDate, tags, recurring, subtasks });
+        if (isEdit) Object.assign(task, { title, description, priority, dueDate, tags, recurring, subtasks, projectId });
         else state.data.tasks.push({
-          id: uid(), title, description, priority, dueDate, tags, recurring, subtasks,
+          id: uid(), title, description, priority, dueDate, tags, recurring, subtasks, projectId,
           status: 'pending', createdAt: new Date().toISOString(),
           lastGenerated: recurring !== 'none' ? todayISO() : undefined,
           order: state.data.tasks.length,
@@ -576,6 +587,7 @@ function buildDayCell(date, otherMonth) {
 
 function renderDayMeetings() {
   const todays = state.data.meetings
+    .filter(inActiveProject)
     .filter((m) => sameDay(m.start, state.selectedDate))
     .sort((a, b) => new Date(a.start) - new Date(b.start));
   dayMeetingsEl.innerHTML = '';
@@ -613,7 +625,7 @@ function renderMeetingItem(m) {
 
 function openMeetingModal(meeting) {
   const isEdit = !!meeting;
-  const m = meeting || { title: '', start: new Date(state.selectedDate).toISOString().slice(0, 16), end: '', location: '', attendees: '', notes: '', attachments: [] };
+  const m = meeting || { title: '', start: new Date(state.selectedDate).toISOString().slice(0, 16), end: '', location: '', attendees: '', notes: '', attachments: [], projectId: state.activeProjectId };
   openModal(isEdit ? t('modal.meeting.edit') : t('modal.meeting.add'), `
     <div class="field"><label>${t('form.meeting.title')}</label><input id="f-title" type="text" value="${escapeAttr(m.title)}"></div>
     <div class="field-row">
@@ -633,6 +645,7 @@ function openMeetingModal(meeting) {
         ${(m.attachments || []).map((a, i) => `<div data-idx="${i}" style="display:flex; align-items:center; gap:8px; padding: 4px 0;">${escapeHTML(a.name)} <button type="button" class="text-btn text-btn-danger" data-rm="${i}">${t('action.remove')}</button></div>`).join('')}
       </div>
     </div>
+    ${projectSelectHTML(m.projectId)}
   `, [
     { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
     { label: isEdit ? t('action.save') : t('action.add'), class: 'btn-primary', onClick: async () => {
@@ -643,13 +656,14 @@ function openMeetingModal(meeting) {
         const location = document.getElementById('f-location').value.trim();
         const attendees = document.getElementById('f-attendees').value.trim();
         const notes = document.getElementById('f-notes').value.trim();
+        const projectId = document.getElementById('f-project').value || undefined;
         const files = document.getElementById('f-files').files;
         const newAttachments = await Promise.all([...files].map(readFileAsDataURL));
         const keptAttachments = (m.attachments || []).filter((_, i) => !removedAttachmentIdx.has(i));
         const attachments = [...keptAttachments, ...newAttachments];
 
-        if (isEdit) Object.assign(meeting, { title, start, end, location, attendees, notes, attachments });
-        else state.data.meetings.push({ id: uid(), title, start, end, location, attendees, notes, attachments, createdAt: new Date().toISOString() });
+        if (isEdit) Object.assign(meeting, { title, start, end, location, attendees, notes, attachments, projectId });
+        else state.data.meetings.push({ id: uid(), title, start, end, location, attendees, notes, attachments, projectId, createdAt: new Date().toISOString() });
         await persist(); closeModal(); renderAll();
         toast(isEdit ? t('msg.meetingSaved') : t('msg.meetingAdded'));
     }},
@@ -694,9 +708,10 @@ const followupEmptyEl = document.getElementById('followup-empty');
 document.getElementById('btn-add-followup').addEventListener('click', () => openFollowupModal());
 
 function renderFollowups() {
+  const list = state.data.followUps.filter(inActiveProject);
   followupListEl.innerHTML = '';
-  followupEmptyEl.classList.toggle('hidden', state.data.followUps.length > 0);
-  state.data.followUps.forEach((f) => followupListEl.appendChild(renderFollowupItem(f)));
+  followupEmptyEl.classList.toggle('hidden', list.length > 0);
+  list.forEach((f) => followupListEl.appendChild(renderFollowupItem(f)));
 }
 
 function renderFollowupItem(f) {
@@ -730,12 +745,13 @@ function renderFollowupItem(f) {
 
 function openFollowupModal(f) {
   const isEdit = !!f;
-  const obj = f || { member: '', title: '', details: '', dueDate: todayISO(), status: 'pending' };
+  const obj = f || { member: '', title: '', details: '', dueDate: todayISO(), status: 'pending', projectId: state.activeProjectId };
   openModal(isEdit ? t('modal.followup.edit') : t('modal.followup.add'), `
     <div class="field"><label>${t('form.member')}</label><input id="f-member" type="text" value="${escapeAttr(obj.member)}" placeholder="${escapeAttr(t('form.member.placeholder'))}"></div>
     <div class="field"><label>${t('form.followup.title')}</label><input id="f-title" type="text" value="${escapeAttr(obj.title)}"></div>
     <div class="field"><label>${t('form.details')}</label><textarea id="f-details">${escapeHTML(obj.details || '')}</textarea></div>
     <div class="field"><label>${t('form.dueDate')}</label><input id="f-due" type="date" value="${obj.dueDate || ''}"></div>
+    ${projectSelectHTML(obj.projectId)}
   `, [
     { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
     { label: isEdit ? t('action.save') : t('action.add'), class: 'btn-primary', onClick: async () => {
@@ -744,8 +760,9 @@ function openFollowupModal(f) {
         if (!member || !title) { toast(t('msg.nameTitleRequired')); return; }
         const details = document.getElementById('f-details').value.trim();
         const dueDate = document.getElementById('f-due').value || null;
-        if (isEdit) Object.assign(f, { member, title, details, dueDate });
-        else state.data.followUps.push({ id: uid(), member, title, details, dueDate, status: 'pending', createdAt: new Date().toISOString() });
+        const projectId = document.getElementById('f-project').value || undefined;
+        if (isEdit) Object.assign(f, { member, title, details, dueDate, projectId });
+        else state.data.followUps.push({ id: uid(), member, title, details, dueDate, projectId, status: 'pending', createdAt: new Date().toISOString() });
         await persist(); closeModal(); renderAll();
         toast(isEdit ? t('msg.saved') : t('msg.added'));
     }},
@@ -763,9 +780,10 @@ document.getElementById('btn-add-note').addEventListener('click', () => openNote
 document.getElementById('btn-record').addEventListener('click', toggleRecording);
 
 function renderNotes() {
+  const list = state.data.notes.filter(inActiveProject);
   noteListEl.innerHTML = '';
-  noteEmptyEl.classList.toggle('hidden', state.data.notes.length > 0);
-  [...state.data.notes].reverse().forEach((n) => noteListEl.appendChild(renderNoteItem(n)));
+  noteEmptyEl.classList.toggle('hidden', list.length > 0);
+  [...list].reverse().forEach((n) => noteListEl.appendChild(renderNoteItem(n)));
 }
 
 function renderNoteItem(n) {
@@ -804,7 +822,7 @@ function renderNoteItem(n) {
 
 function openNoteModal(n) {
   const isEdit = !!n;
-  const obj = n || { title: '', body: '' };
+  const obj = n || { title: '', body: '', projectId: state.activeProjectId };
   openModal(isEdit ? t('modal.note.edit') : t('modal.note.add'), `
     <div class="field"><label>${t('form.title')}</label><input id="f-title" type="text" value="${escapeAttr(obj.title || '')}"></div>
     <div class="field">
@@ -812,14 +830,16 @@ function openNoteModal(n) {
       <textarea id="f-body" style="min-height:180px; font-family: 'Menlo','Consolas',monospace; font-size: 13px;">${escapeHTML(obj.body || '')}</textarea>
       <div class="field-hint">${t('form.body.hint')}</div>
     </div>
+    ${projectSelectHTML(obj.projectId)}
   `, [
     { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
     { label: isEdit ? t('action.save') : t('action.add'), class: 'btn-primary', onClick: async () => {
         const title = document.getElementById('f-title').value.trim();
         const body = document.getElementById('f-body').value.trim();
         if (!title && !body) { toast(t('msg.titleOrBody')); return; }
-        if (isEdit) Object.assign(n, { title, body });
-        else state.data.notes.push({ id: uid(), title, body, createdAt: new Date().toISOString() });
+        const projectId = document.getElementById('f-project').value || undefined;
+        if (isEdit) Object.assign(n, { title, body, projectId });
+        else state.data.notes.push({ id: uid(), title, body, projectId, createdAt: new Date().toISOString() });
         await persist(); closeModal(); renderAll();
         toast(isEdit ? t('msg.saved') : t('msg.added'));
     }},
@@ -1181,21 +1201,446 @@ if (window.api?.onUpdate) {
 }
 
 // ============================================================
+// PROJECTS
+// ============================================================
+function projectById(id) { return state.data.projects.find((p) => p.id === id) || null; }
+function inActiveProject(item) {
+  if (!state.activeProjectId) return true;
+  return (item.projectId || '') === state.activeProjectId;
+}
+function refreshProjectSwitcher() {
+  const sel = document.getElementById('project-switcher');
+  if (!sel) return;
+  const opts = [`<option value="">${escapeHTML(t('projects.all'))}</option>`];
+  for (const p of state.data.projects.filter((p) => !p.archived)) {
+    const selAttr = p.id === state.activeProjectId ? ' selected' : '';
+    opts.push(`<option value="${p.id}"${selAttr}>${escapeHTML(p.name)}</option>`);
+  }
+  sel.innerHTML = opts.join('');
+}
+document.getElementById('project-switcher').addEventListener('change', (e) => {
+  state.activeProjectId = e.target.value;
+  if (state.activeProjectId) localStorage.setItem('scheduler-active-project', state.activeProjectId);
+  else localStorage.removeItem('scheduler-active-project');
+  renderAll();
+});
+
+document.getElementById('btn-add-project').addEventListener('click', () => openProjectModal());
+
+function renderProjects() {
+  const listEl = document.getElementById('project-list');
+  const emptyEl = document.getElementById('project-empty');
+  listEl.innerHTML = '';
+  emptyEl.classList.toggle('hidden', state.data.projects.length > 0);
+  for (const p of state.data.projects) {
+    const counts = {
+      tasks: state.data.tasks.filter((x) => x.projectId === p.id).length,
+      meetings: state.data.meetings.filter((x) => x.projectId === p.id).length,
+      followUps: state.data.followUps.filter((x) => x.projectId === p.id).length,
+      notes: state.data.notes.filter((x) => x.projectId === p.id).length,
+    };
+    const li = document.createElement('li');
+    li.className = 'project-item' + (p.archived ? ' project-archived' : '');
+    const isAr = I18N.getLang() === 'ar';
+    li.innerHTML = `
+      <span class="project-dot" style="background:${p.color}"></span>
+      <div class="project-name">${escapeHTML(p.name)}${p.archived ? ` <span style="color:var(--text-muted); font-weight:400;">— ${t('projects.archived')}</span>` : ''}</div>
+      <span class="project-count">${counts.tasks} ${isAr ? 'مهام' : 'tasks'} · ${counts.meetings} ${isAr ? 'اجتماع' : 'meetings'} · ${counts.followUps} ${isAr ? 'متابعة' : 'follow-ups'} · ${counts.notes} ${isAr ? 'ملاحظات' : 'notes'}</span>
+      <div class="task-actions">
+        <button class="text-btn" data-action="edit">${t('action.edit')}</button>
+        <button class="text-btn text-btn-danger" data-action="delete">${t('action.delete')}</button>
+      </div>`;
+    li.querySelector('[data-action="edit"]').addEventListener('click', () => openProjectModal(p));
+    li.querySelector('[data-action="delete"]').addEventListener('click', () => {
+      openModal(t('modal.delete.title'), `<p>${t('projects.delete.body')}</p>`, [
+        { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
+        { label: t('action.delete'), class: 'btn-danger', onClick: async () => {
+            closeModal();
+            // Unassign linked items
+            for (const arr of [state.data.tasks, state.data.meetings, state.data.followUps, state.data.notes, state.data.expenses]) {
+              arr.forEach((x) => { if (x.projectId === p.id) delete x.projectId; });
+            }
+            state.data.projects = state.data.projects.filter((x) => x.id !== p.id);
+            if (state.activeProjectId === p.id) {
+              state.activeProjectId = '';
+              localStorage.removeItem('scheduler-active-project');
+            }
+            await persist();
+            refreshProjectSwitcher();
+            renderAll();
+            toast(t('msg.deleted'));
+        }},
+      ]);
+    });
+    listEl.appendChild(li);
+  }
+}
+
+function openProjectModal(p) {
+  const isEdit = !!p;
+  const obj = p || { name: '', color: PROJECT_COLORS[state.data.projects.length % PROJECT_COLORS.length], archived: false };
+  const colorOpts = PROJECT_COLORS.map((c) => `<button type="button" data-color="${c}" class="color-swatch${c === obj.color ? ' selected' : ''}" style="background:${c}"></button>`).join('');
+  openModal(isEdit ? t('projects.edit') : t('projects.add'), `
+    <div class="field"><label>${t('projects.name')}</label><input id="f-name" type="text" value="${escapeAttr(obj.name)}"></div>
+    <div class="field">
+      <label>${t('projects.color')}</label>
+      <div id="color-row" style="display:flex; gap:8px; flex-wrap:wrap;">${colorOpts}</div>
+    </div>
+    ${isEdit ? `<div class="field"><label><input id="f-archived" type="checkbox" ${obj.archived ? 'checked' : ''}> ${t('projects.archived')}</label></div>` : ''}
+  `, [
+    { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
+    { label: isEdit ? t('action.save') : t('action.add'), class: 'btn-primary', onClick: async () => {
+        const name = document.getElementById('f-name').value.trim();
+        if (!name) { toast(t('projects.confirmName')); return; }
+        const color = document.querySelector('#color-row .color-swatch.selected')?.dataset.color || obj.color;
+        const archived = isEdit ? document.getElementById('f-archived').checked : false;
+        if (isEdit) Object.assign(p, { name, color, archived });
+        else state.data.projects.push({ id: uid(), name, color, archived, createdAt: new Date().toISOString() });
+        await persist();
+        refreshProjectSwitcher();
+        renderAll();
+        closeModal();
+        toast(isEdit ? t('msg.saved') : t('msg.added'));
+    }},
+  ]);
+  document.querySelectorAll('#color-row .color-swatch').forEach((b) => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#color-row .color-swatch').forEach((x) => x.classList.remove('selected'));
+      b.classList.add('selected');
+    });
+  });
+}
+
+// Project dropdown for re-use in other modals
+function projectSelectHTML(currentId) {
+  const opts = [`<option value="">${escapeHTML(t('projects.none'))}</option>`];
+  for (const p of state.data.projects.filter((p) => !p.archived)) {
+    const sel = p.id === currentId ? ' selected' : '';
+    opts.push(`<option value="${p.id}"${sel}>${escapeHTML(p.name)}</option>`);
+  }
+  return `<div class="field"><label>${t('projects.field')}</label><select id="f-project">${opts.join('')}</select></div>`;
+}
+
+// ============================================================
+// BUDGET / EXPENSES
+// ============================================================
+document.getElementById('btn-add-expense').addEventListener('click', () => openExpenseModal());
+document.querySelectorAll('#budget-filters .chip').forEach((c) => {
+  c.addEventListener('click', () => {
+    document.querySelectorAll('#budget-filters .chip').forEach((x) => x.classList.remove('active'));
+    c.classList.add('active');
+    state.budgetFilter = c.dataset.bfilter;
+    renderExpenses();
+  });
+});
+
+function filteredExpenses() {
+  let list = state.data.expenses.filter(inActiveProject);
+  if (state.budgetFilter === 'month') {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    list = list.filter((e) => {
+      const d = new Date(e.date); return d.getFullYear() === y && d.getMonth() === m;
+    });
+  }
+  return list.sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+function renderExpenses() {
+  const listEl = document.getElementById('expense-list');
+  const emptyEl = document.getElementById('expense-empty');
+  const sumEl = document.getElementById('budget-summary');
+  const list = filteredExpenses();
+  listEl.innerHTML = '';
+  emptyEl.classList.toggle('hidden', list.length > 0);
+
+  // Summary
+  const total = list.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const byCat = {};
+  for (const e of list) {
+    const cat = e.category || (I18N.getLang() === 'ar' ? 'بدون فئة' : 'Uncategorised');
+    byCat[cat] = (byCat[cat] || 0) + (Number(e.amount) || 0);
+  }
+  const currency = list[0]?.currency || 'SAR';
+  const totalLabel = state.budgetFilter === 'month' ? t('budget.month') : t('budget.all');
+  const catsHTML = Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, a]) => `
+    <div class="budget-cat-row">
+      <span class="budget-cat-name">${escapeHTML(c)}</span>
+      <span class="budget-cat-amount">${a.toLocaleString(I18N.locale(), { maximumFractionDigits: 2 })} ${escapeHTML(currency)}</span>
+    </div>`).join('');
+  sumEl.innerHTML = `
+    <div class="budget-card">
+      <h4>${t('budget.total')} — ${totalLabel}</h4>
+      <div class="budget-total">${total.toLocaleString(I18N.locale(), { maximumFractionDigits: 2 })} <span style="font-size:18px;">${escapeHTML(currency)}</span></div>
+    </div>
+    <div class="budget-card">
+      <h4>${t('budget.byCategory')}</h4>
+      <div class="budget-categories">${catsHTML || `<div style="color:var(--text-muted);">${t('budget.empty')}</div>`}</div>
+    </div>
+  `;
+
+  // List
+  for (const e of list) {
+    const li = document.createElement('li');
+    li.className = 'expense-item';
+    const p = projectById(e.projectId);
+    li.innerHTML = `
+      <span class="expense-amount">${Number(e.amount).toLocaleString(I18N.locale(), { maximumFractionDigits: 2 })} ${escapeHTML(e.currency || 'SAR')}</span>
+      <span class="expense-cat">${escapeHTML(e.category || (I18N.getLang() === 'ar' ? 'بدون فئة' : 'Uncategorised'))}</span>
+      <div class="expense-meta">
+        <div>${escapeHTML(e.description || '')}</div>
+        <div class="expense-date">${fmtDate(e.date)}${p ? ` · ${escapeHTML(p.name)}` : ''}</div>
+      </div>
+      <div class="task-actions">
+        <button class="text-btn" data-action="edit">${t('action.edit')}</button>
+        <button class="text-btn text-btn-danger" data-action="delete">${t('action.delete')}</button>
+      </div>`;
+    li.querySelector('[data-action="edit"]').addEventListener('click', () => openExpenseModal(e));
+    li.querySelector('[data-action="delete"]').addEventListener('click', () => confirmDelete('expense', async () => {
+      state.data.expenses = state.data.expenses.filter((x) => x.id !== e.id);
+      await persist(); renderAll(); toast(t('msg.deleted'));
+    }));
+    listEl.appendChild(li);
+  }
+}
+
+function openExpenseModal(e) {
+  const isEdit = !!e;
+  const obj = e || { amount: '', currency: 'SAR', category: '', date: todayISO(), description: '', projectId: state.activeProjectId };
+  openModal(isEdit ? t('budget.edit') : t('budget.add'), `
+    <div class="field-row">
+      <div class="field"><label>${t('budget.amount')}</label><input id="f-amount" type="number" step="0.01" value="${escapeAttr(obj.amount)}"></div>
+      <div class="field"><label>${t('budget.currency')}</label><input id="f-currency" type="text" value="${escapeAttr(obj.currency || 'SAR')}"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>${t('budget.category')}</label><input id="f-category" type="text" value="${escapeAttr(obj.category || '')}" placeholder="${I18N.getLang() === 'ar' ? 'مكتب، سفر، طعام...' : 'Office, Travel, Food...'}"></div>
+      <div class="field"><label>${t('budget.date')}</label><input id="f-date" type="date" value="${obj.date || todayISO()}"></div>
+    </div>
+    <div class="field"><label>${t('budget.description')}</label><input id="f-description" type="text" value="${escapeAttr(obj.description || '')}"></div>
+    ${projectSelectHTML(obj.projectId)}
+  `, [
+    { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
+    { label: isEdit ? t('action.save') : t('action.add'), class: 'btn-primary', onClick: async () => {
+        const amount = parseFloat(document.getElementById('f-amount').value);
+        if (!amount || isNaN(amount)) { toast(t('budget.amountRequired')); return; }
+        const currency = document.getElementById('f-currency').value.trim() || 'SAR';
+        const category = document.getElementById('f-category').value.trim();
+        const date = document.getElementById('f-date').value || todayISO();
+        const description = document.getElementById('f-description').value.trim();
+        const projectId = document.getElementById('f-project').value || undefined;
+        if (isEdit) Object.assign(e, { amount, currency, category, date, description, projectId });
+        else state.data.expenses.push({ id: uid(), amount, currency, category, date, description, projectId, createdAt: new Date().toISOString() });
+        await persist(); closeModal(); renderAll();
+        toast(isEdit ? t('msg.saved') : t('msg.added'));
+    }},
+  ]);
+}
+
+// ============================================================
+// SCORECARD KPIs
+// ============================================================
+function renderScorecard() {
+  const grid = document.getElementById('kpi-grid');
+  if (!grid) return;
+
+  const now = new Date();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const sevenDaysAgo = new Date(now.getTime() - 7 * dayMs);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * dayMs);
+
+  const tasksScoped = state.data.tasks.filter(inActiveProject);
+  const meetingsScoped = state.data.meetings.filter(inActiveProject);
+  const followupsScoped = state.data.followUps.filter(inActiveProject);
+
+  // Meeting hours last 7 days
+  let meetingHours = 0;
+  for (const m of meetingsScoped) {
+    const s = new Date(m.start);
+    if (s < sevenDaysAgo || s > now) continue;
+    const e = m.end ? new Date(m.end) : new Date(s.getTime() + 30 * 60_000);
+    meetingHours += Math.max(0, (e - s) / 3_600_000);
+  }
+
+  // Completion rate (last 30 days, by createdAt)
+  const recent = tasksScoped.filter((tk) => tk.createdAt && new Date(tk.createdAt) >= thirtyDaysAgo);
+  const recentDone = recent.filter((tk) => tk.status === 'done').length;
+  const completionPct = recent.length ? Math.round((recentDone / recent.length) * 100) : 0;
+
+  // Avg follow-up close time in days (closed only)
+  const closedFollowups = followupsScoped.filter((f) => f.status === 'done' && f.createdAt);
+  let avgFollowupDays = 0;
+  if (closedFollowups.length) {
+    const totalDays = closedFollowups.reduce((s, f) => {
+      const created = new Date(f.createdAt).getTime();
+      const closed = f.closedAt ? new Date(f.closedAt).getTime() : (f.updatedAt ? new Date(f.updatedAt).getTime() : Date.now());
+      return s + Math.max(0, (closed - created) / dayMs);
+    }, 0);
+    avgFollowupDays = totalDays / closedFollowups.length;
+  }
+
+  // Goal focus % — tasks tagged "goal" or "هدف" within recent
+  const isGoalTag = (tag) => /^(goal|هدف|objective|key result|kr)$/i.test(tag);
+  const goalTasks = recent.filter((tk) => (tk.tags || []).some(isGoalTag));
+  const goalPct = recent.length ? Math.round((goalTasks.length / recent.length) * 100) : 0;
+
+  // Open/overdue counts
+  const today = todayISO();
+  const open = tasksScoped.filter((tk) => tk.status !== 'done').length;
+  const overdue = tasksScoped.filter((tk) => tk.status !== 'done' && tk.dueDate && tk.dueDate < today).length;
+
+  const isAr = I18N.getLang() === 'ar';
+  grid.innerHTML = `
+    <div class="kpi-card k-blue">
+      <div class="kpi-label">${t('scorecard.meetingLoad')}</div>
+      <div class="kpi-value">${meetingHours.toFixed(1)}<span class="kpi-unit">${isAr ? 'ساعة' : t('scorecard.hours')}</span></div>
+    </div>
+    <div class="kpi-card k-coral">
+      <div class="kpi-label">${t('scorecard.completionRate')}</div>
+      <div class="kpi-value">${completionPct}<span class="kpi-unit">%</span></div>
+      <div class="kpi-hint">${recentDone} / ${recent.length} ${isAr ? 'منجزة' : 'completed'}</div>
+    </div>
+    <div class="kpi-card k-purple">
+      <div class="kpi-label">${t('scorecard.followupResponse')}</div>
+      <div class="kpi-value">${avgFollowupDays.toFixed(1)}<span class="kpi-unit">${t('scorecard.days')}</span></div>
+      <div class="kpi-hint">${closedFollowups.length} ${isAr ? 'متابعة مغلقة' : 'closed follow-ups'}</div>
+    </div>
+    <div class="kpi-card k-green">
+      <div class="kpi-label">${t('scorecard.goalFocus')}</div>
+      <div class="kpi-value">${goalPct}<span class="kpi-unit">%</span></div>
+      <div class="kpi-hint">${t('scorecard.goalHint')}</div>
+    </div>
+    <div class="kpi-card k-amber">
+      <div class="kpi-label">${t('scorecard.openTasks')}</div>
+      <div class="kpi-value">${open}</div>
+    </div>
+    <div class="kpi-card k-coral">
+      <div class="kpi-label">${t('scorecard.overdueTasks')}</div>
+      <div class="kpi-value" style="color: ${overdue > 0 ? 'var(--red)' : 'var(--green)'}">${overdue}</div>
+    </div>
+  `;
+}
+
+// ============================================================
+// SHARE STANDUP
+// ============================================================
+document.getElementById('btn-share').addEventListener('click', () => shareStandup());
+
+function buildStandupHTML() {
+  const today = todayISO();
+  const todayTasks = state.data.tasks.filter((tk) => tk.dueDate === today && inActiveProject(tk));
+  const todayMeetings = state.data.meetings.filter((m) => sameDay(m.start, new Date()) && inActiveProject(m));
+  const openFollowups = state.data.followUps.filter((f) => f.status !== 'done' && inActiveProject(f));
+  const projectName = state.activeProjectId ? projectById(state.activeProjectId)?.name : null;
+  const isAr = I18N.getLang() === 'ar';
+  const dir = isAr ? 'rtl' : 'ltr';
+  const lang = isAr ? 'ar' : 'en';
+  const dateStr = fmtDate(new Date());
+  const css = `
+    body { font-family: 'IBM Plex Sans Arabic','IBM Plex Sans',system-ui,-apple-system,sans-serif; background: #faf7f1; color: #2a2520; margin: 0; padding: 32px 24px; line-height: 1.55; }
+    .wrap { max-width: 720px; margin: 0 auto; background: #fff; border: 1px solid #e6dcc6; border-radius: 14px; padding: 36px 40px; }
+    h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -0.02em; color: #cc785c; }
+    .meta { color: #968d80; font-size: 13px; margin-bottom: 24px; }
+    h2 { font-size: 16px; margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #e6dcc6; color: #5d544a; }
+    .item { padding: 10px 14px; margin-bottom: 6px; background: #faf6ee; border: 1px solid #e6dcc6; border-radius: 8px; }
+    .priority-high { border-inline-start: 3px solid #a8534a; }
+    .priority-medium { border-inline-start: 3px solid #b88243; }
+    .priority-low { border-inline-start: 3px solid #6b8472; }
+    .label { color: #968d80; font-size: 12px; }
+    .empty { color: #968d80; font-style: italic; padding: 8px 0; }
+    .footer { margin-top: 28px; color: #968d80; font-size: 11.5px; text-align: center; }
+    .done { text-decoration: line-through; color: #968d80; }
+  `;
+  const taskHTML = todayTasks.length
+    ? todayTasks.map((tk) => `<div class="item priority-${tk.priority || 'medium'}"><span class="${tk.status === 'done' ? 'done' : ''}">${escapeHTML(tk.title)}</span>${tk.description ? `<div class="label">${escapeHTML(tk.description)}</div>` : ''}</div>`).join('')
+    : `<div class="empty">${t('print.none')}</div>`;
+  const meetingHTML = todayMeetings.length
+    ? todayMeetings.map((m) => `<div class="item"><strong>${escapeHTML(m.title)}</strong><div class="label">${fmtDateTime(m.start)}${m.end ? ' — ' + fmtTime(m.end) : ''}${m.location ? ' · ' + escapeHTML(m.location) : ''}${m.attendees ? ' · ' + escapeHTML(m.attendees) : ''}</div></div>`).join('')
+    : `<div class="empty">${t('print.none')}</div>`;
+  const followupHTML = openFollowups.length
+    ? openFollowups.map((f) => `<div class="item"><strong>${escapeHTML(f.member)}</strong> — ${escapeHTML(f.title)}${f.dueDate ? ` <span class="label">(${fmtDate(f.dueDate)})</span>` : ''}</div>`).join('')
+    : `<div class="empty">${t('print.none')}</div>`;
+
+  return `<!doctype html>
+<html lang="${lang}" dir="${dir}">
+<head>
+<meta charset="utf-8">
+<title>${escapeHTML(t('print.title', { date: dateStr }))}</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>${css}</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>${escapeHTML(t('print.title', { date: dateStr }))}</h1>
+  <div class="meta">${projectName ? escapeHTML(projectName) + ' · ' : ''}${isAr ? 'مشاركة قراءة فقط' : 'Read-only snapshot'}</div>
+  <h2>${escapeHTML(t('print.tasks'))} (${todayTasks.length})</h2>
+  ${taskHTML}
+  <h2>${escapeHTML(t('print.meetings'))} (${todayMeetings.length})</h2>
+  ${meetingHTML}
+  <h2>${escapeHTML(t('print.followups'))} (${openFollowups.length})</h2>
+  ${followupHTML}
+  <div class="footer">Scheduler — ${new Date().toISOString()}</div>
+</div>
+</body>
+</html>`;
+}
+
+async function shareStandup() {
+  const html = buildStandupHTML();
+  openModal(t('share.modal.title'), `
+    <p>${t('share.modal.body')}</p>
+  `, [
+    { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
+    { label: t('share.modal.copy'), class: 'btn-outline', onClick: async () => {
+        const dataUrl = 'data:text/html;charset=utf-8;base64,' + btoa(unescape(encodeURIComponent(html)));
+        try { await navigator.clipboard.writeText(dataUrl); toast(t('share.copied')); }
+        catch { toast('Could not copy'); }
+        closeModal();
+    }},
+    { label: t('share.modal.save'), class: 'btn-primary', onClick: async () => {
+        closeModal();
+        if (window.api?.saveStandup) {
+          const r = await window.api.saveStandup(html);
+          if (r?.ok) toast(t('share.saved') + ': ' + r.path);
+        } else {
+          const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = `standup-${todayISO()}.html`;
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+          toast(t('share.saved'));
+        }
+    }},
+  ]);
+}
+
+// ============================================================
 // BOOT
 // ============================================================
 function renderAll() {
+  refreshProjectSwitcher();
   updateCounters();
   renderTasks();
   if (state.activeTab === 'meetings') renderCalendar();
   renderFollowups();
   renderNotes();
-  if (state.activeTab === 'stats') renderStats();
+  if (state.activeTab === 'projects') renderProjects();
+  if (state.activeTab === 'budget') renderExpenses();
+  if (state.activeTab === 'stats') { renderStats(); renderScorecard(); }
 }
 
 (async () => {
   const loaded = await storage.load();
-  state.data = Object.assign({ tasks: [], meetings: [], teamMembers: [], followUps: [], notes: [] }, loaded);
+  state.data = Object.assign({ tasks: [], meetings: [], teamMembers: [], followUps: [], notes: [], projects: [], expenses: [] }, loaded);
+  if (!Array.isArray(state.data.projects)) state.data.projects = [];
+  if (!Array.isArray(state.data.expenses)) state.data.expenses = [];
   state.data.tasks.forEach((tk, i) => { if (tk.order == null) tk.order = i; });
+  // If the persisted active project no longer exists, fall back to all
+  if (state.activeProjectId && !state.data.projects.find((p) => p.id === state.activeProjectId)) {
+    state.activeProjectId = '';
+    localStorage.removeItem('scheduler-active-project');
+  }
+  refreshProjectSwitcher();
   expandRecurringTasks();
   booted = true;
   renderAll();

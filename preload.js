@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   saveData: (data) => ipcRenderer.invoke('data:save', data),
   exportData: (data) => ipcRenderer.invoke('data:export', data),
   notify: (title, body) => ipcRenderer.invoke('notify', { title, body }),
+  saveStandup: (html) => ipcRenderer.invoke('share:save', html),
   onUpdate: (cb) => {
     ipcRenderer.on('update:event', (_e, payload) => cb(payload));
   },

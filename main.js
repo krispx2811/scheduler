@@ -56,6 +56,20 @@ ipcMain.handle('notify', (_e, { title, body }) => {
   return true;
 });
 
+ipcMain.handle('share:save', async (_e, html) => {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save daily standup',
+    defaultPath: `standup-${stamp}.html`,
+    filters: [{ name: 'HTML', extensions: ['html'] }],
+  });
+  if (result.canceled || !result.filePath) return { ok: false };
+  fs.writeFileSync(result.filePath, html, 'utf8');
+  // Open in default browser
+  require('electron').shell.openPath(result.filePath);
+  return { ok: true, path: result.filePath };
+});
+
 // ========== Auto-updater ==========
 function send(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);

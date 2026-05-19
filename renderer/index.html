@@ -8,15 +8,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
   <div id="app">
     <!-- Header -->
     <header class="header">
       <div class="header-left">
+        <select id="project-switcher" class="project-switcher" aria-label="Project filter"></select>
         <button id="btn-lang" class="btn btn-ghost">English</button>
         <button id="btn-theme" class="btn btn-ghost" data-i18n="btn.theme.toLight">الوضع النهاري</button>
+        <button id="btn-share" class="btn btn-ghost" data-i18n="btn.share">مشاركة موجز اليوم</button>
         <button id="btn-print" class="btn btn-ghost" data-i18n="btn.print">طباعة موجز اليوم</button>
         <button id="btn-export" class="btn btn-ghost" data-i18n="btn.export">تصدير كل البيانات</button>
       </div>
@@ -57,7 +59,9 @@
       <button class="tab" data-tab="meetings" data-i18n="tab.meetings">الاجتماعات</button>
       <button class="tab" data-tab="team" data-i18n="tab.team">متابعة الفريق</button>
       <button class="tab" data-tab="notes" data-i18n="tab.notes">الملاحظات</button>
-      <button class="tab" data-tab="stats" data-i18n="tab.stats">الإحصائيات</button>
+      <button class="tab" data-tab="projects" data-i18n="projects.manage">إدارة المشاريع</button>
+      <button class="tab" data-tab="budget" data-i18n="tab.budget">الميزانية</button>
+      <button class="tab" data-tab="stats" data-i18n="tab.scorecard">لوحة الأداء</button>
     </nav>
 
     <!-- Search results panel -->
@@ -123,12 +127,38 @@
       <div id="note-empty" class="empty" data-i18n="notes.empty">لا توجد ملاحظات</div>
     </section>
 
-    <!-- Stats panel -->
+    <!-- Projects panel -->
+    <section id="panel-projects" class="panel hidden">
+      <div class="panel-head">
+        <h2 data-i18n="projects.manage">إدارة المشاريع</h2>
+        <button id="btn-add-project" class="btn btn-primary" data-i18n="projects.add">إضافة مشروع</button>
+      </div>
+      <ul id="project-list" class="project-list"></ul>
+      <div id="project-empty" class="empty" data-i18n="projects.empty">لا توجد مشاريع</div>
+    </section>
+
+    <!-- Budget panel -->
+    <section id="panel-budget" class="panel hidden">
+      <div class="panel-head">
+        <h2 data-i18n="budget.heading">تتبع المصاريف</h2>
+        <button id="btn-add-expense" class="btn btn-primary" data-i18n="budget.add">إضافة مصروف</button>
+      </div>
+      <div class="filters" id="budget-filters">
+        <button class="chip active" data-bfilter="month" data-i18n="budget.month">هذا الشهر</button>
+        <button class="chip" data-bfilter="all" data-i18n="budget.all">الكل</button>
+      </div>
+      <div class="budget-summary" id="budget-summary"></div>
+      <ul id="expense-list" class="expense-list"></ul>
+      <div id="expense-empty" class="empty" data-i18n="budget.empty">لا توجد مصاريف بعد</div>
+    </section>
+
+    <!-- Scorecard / Stats panel -->
     <section id="panel-stats" class="panel hidden">
       <div class="panel-head">
-        <h2 data-i18n="stats.heading">الإحصائيات</h2>
+        <h2 data-i18n="scorecard.heading">لوحة أداء المدير</h2>
       </div>
-      <div class="stats-grid">
+      <div class="kpi-grid" id="kpi-grid"></div>
+      <div class="stats-grid" style="margin-top: 18px;">
         <div class="chart-card">
           <h3 data-i18n="stats.byStatus">المهام حسب الحالة</h3>
           <canvas id="chart-status"></canvas>
@@ -166,9 +196,9 @@
     <button id="btn-update-action" class="btn btn-primary"></button>
   </div>
 
-  <script src="vendor/chart.umd.js?v=4"></script>
-  <script src="vendor/marked.umd.js?v=4"></script>
-  <script src="i18n.js?v=4"></script>
-  <script src="app.js?v=4"></script>
+  <script src="vendor/chart.umd.js?v=5"></script>
+  <script src="vendor/marked.umd.js?v=5"></script>
+  <script src="i18n.js?v=5"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
