@@ -153,6 +153,7 @@ document.getElementById('btn-theme').addEventListener('click', () => {
 });
 
 // ---------- Language ----------
+let booted = false;
 function applyLang(lang) {
   I18N.setLang(lang);
   document.documentElement.lang = lang;
@@ -166,12 +167,12 @@ function applyLang(lang) {
     el.setAttribute('placeholder', t(el.dataset.i18nPlaceholder));
   });
   document.getElementById('today-date').textContent = fmtDate(new Date());
-  // Re-sync the theme button label
   const theme = document.documentElement.getAttribute('data-theme') || 'dark';
   const tb = document.getElementById('btn-theme');
   if (tb) tb.textContent = theme === 'dark' ? t('btn.theme.toLight') : t('btn.theme.toDark');
-  renderAll();
+  if (booted) renderAll();
 }
+// Apply static text/dir/lang up front; renderAll comes later from boot IIFE.
 applyLang(I18N.getLang());
 document.getElementById('btn-lang').addEventListener('click', () => {
   applyLang(I18N.getLang() === 'ar' ? 'en' : 'ar');
@@ -989,6 +990,7 @@ function renderAll() {
   state.data = Object.assign({ tasks: [], meetings: [], teamMembers: [], followUps: [], notes: [] }, loaded);
   state.data.tasks.forEach((tk, i) => { if (tk.order == null) tk.order = i; });
   expandRecurringTasks();
+  booted = true;
   renderAll();
   checkNotifications();
   setInterval(checkNotifications, 60_000);
