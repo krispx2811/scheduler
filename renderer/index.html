@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' data: blob:; script-src 'self';">
+  <title data-i18n="app.title">لوحة التحكم</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <button id="btn-lang" class="btn btn-ghost">English</button>
+        <button id="btn-theme" class="btn btn-ghost" data-i18n="btn.theme.toLight">الوضع النهاري</button>
+        <button id="btn-print" class="btn btn-ghost" data-i18n="btn.print">طباعة موجز اليوم</button>
+        <button id="btn-export" class="btn btn-ghost" data-i18n="btn.export">تصدير كل البيانات</button>
+      </div>
+      <div class="header-right">
+        <h1 data-i18n="app.title">لوحة التحكم</h1>
+        <p id="today-date" class="subtitle"></p>
+      </div>
+    </header>
+
+    <!-- Global search -->
+    <div class="search-wrap">
+      <input id="global-search" type="search" data-i18n-placeholder="search.placeholder" placeholder="بحث في المهام والاجتماعات والملاحظات" />
+    </div>
+
+    <!-- Stat cards -->
+    <section class="stats">
+      <div class="stat-card accent-amber">
+        <div class="stat-label" data-i18n="stat.today">مهام اليوم</div>
+        <div class="stat-value" id="stat-today">0</div>
+      </div>
+      <div class="stat-card accent-coral">
+        <div class="stat-label" data-i18n="stat.pending">مهام معلقة</div>
+        <div class="stat-value" id="stat-pending">0</div>
+      </div>
+      <div class="stat-card accent-blue">
+        <div class="stat-label" data-i18n="stat.meetings">اجتماعات قادمة</div>
+        <div class="stat-value" id="stat-meetings">0</div>
+      </div>
+      <div class="stat-card accent-purple">
+        <div class="stat-label" data-i18n="stat.followups">متابعات الفريق</div>
+        <div class="stat-value" id="stat-followups">0</div>
+      </div>
+    </section>
+
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="tasks" data-i18n="tab.tasks">المهام</button>
+      <button class="tab" data-tab="meetings" data-i18n="tab.meetings">الاجتماعات</button>
+      <button class="tab" data-tab="team" data-i18n="tab.team">متابعة الفريق</button>
+      <button class="tab" data-tab="notes" data-i18n="tab.notes">الملاحظات</button>
+      <button class="tab" data-tab="stats" data-i18n="tab.stats">الإحصائيات</button>
+    </nav>
+
+    <!-- Search results panel -->
+    <section id="search-results" class="panel hidden"></section>
+
+    <!-- Tasks panel -->
+    <section id="panel-tasks" class="panel">
+      <div class="panel-head">
+        <h2 data-i18n="tasks.heading">المهام والأولويات</h2>
+        <button id="btn-add-task" class="btn btn-primary" data-i18n="tasks.add">إضافة مهمة</button>
+      </div>
+      <div class="filters" id="task-filters">
+        <button class="chip active" data-filter="all" data-i18n="tasks.filter.all">الكل</button>
+        <button class="chip" data-filter="today" data-i18n="tasks.filter.today">اليوم</button>
+        <button class="chip" data-filter="pending" data-i18n="tasks.filter.pending">معلقة</button>
+        <button class="chip" data-filter="done" data-i18n="tasks.filter.done">منجزة</button>
+        <button class="chip" data-filter="high" data-i18n="tasks.filter.high">عالية الأولوية</button>
+      </div>
+      <ul id="task-list" class="task-list"></ul>
+      <div id="task-empty" class="empty" data-i18n="tasks.empty">لا توجد مهام في هذا الفلتر</div>
+    </section>
+
+    <!-- Meetings panel -->
+    <section id="panel-meetings" class="panel hidden">
+      <div class="panel-head">
+        <h2 data-i18n="meetings.heading">الاجتماعات</h2>
+        <div class="row-actions">
+          <button id="btn-cal-prev" class="btn btn-ghost" data-i18n="meetings.prev">الشهر السابق</button>
+          <span id="cal-title" class="cal-title"></span>
+          <button id="btn-cal-next" class="btn btn-ghost" data-i18n="meetings.next">الشهر التالي</button>
+          <button id="btn-add-meeting" class="btn btn-primary" data-i18n="meetings.add">إضافة اجتماع</button>
+        </div>
+      </div>
+      <div class="calendar" id="calendar"></div>
+      <div class="meetings-list-wrap">
+        <h3 data-i18n="meetings.selectedDay">اجتماعات اليوم المحدد</h3>
+        <ul id="day-meetings" class="meeting-list"></ul>
+        <div id="day-meetings-empty" class="empty" data-i18n="meetings.emptyDay">لا توجد اجتماعات في هذا اليوم</div>
+      </div>
+    </section>
+
+    <!-- Team panel -->
+    <section id="panel-team" class="panel hidden">
+      <div class="panel-head">
+        <h2 data-i18n="team.heading">متابعة الفريق</h2>
+        <button id="btn-add-followup" class="btn btn-primary" data-i18n="team.add">إضافة متابعة</button>
+      </div>
+      <ul id="followup-list" class="followup-list"></ul>
+      <div id="followup-empty" class="empty" data-i18n="team.empty">لا توجد متابعات حالياً</div>
+    </section>
+
+    <!-- Notes panel -->
+    <section id="panel-notes" class="panel hidden">
+      <div class="panel-head">
+        <h2 data-i18n="notes.heading">الملاحظات</h2>
+        <div class="row-actions">
+          <button id="btn-record" class="btn btn-ghost" data-i18n="notes.record">تسجيل ملاحظة صوتية</button>
+          <button id="btn-add-note" class="btn btn-primary" data-i18n="notes.add">إضافة ملاحظة</button>
+        </div>
+      </div>
+      <div id="record-status" class="record-status hidden"></div>
+      <ul id="note-list" class="note-list"></ul>
+      <div id="note-empty" class="empty" data-i18n="notes.empty">لا توجد ملاحظات</div>
+    </section>
+
+    <!-- Stats panel -->
+    <section id="panel-stats" class="panel hidden">
+      <div class="panel-head">
+        <h2 data-i18n="stats.heading">الإحصائيات</h2>
+      </div>
+      <div class="stats-grid">
+        <div class="chart-card">
+          <h3 data-i18n="stats.byStatus">المهام حسب الحالة</h3>
+          <canvas id="chart-status"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3 data-i18n="stats.byPriority">المهام حسب الأولوية</h3>
+          <canvas id="chart-priority"></canvas>
+        </div>
+        <div class="chart-card chart-wide">
+          <h3 data-i18n="stats.weekly">المهام المنجزة في آخر سبعة أيام</h3>
+          <canvas id="chart-weekly"></canvas>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal-backdrop" class="modal-backdrop hidden">
+    <div class="modal" id="modal">
+      <div class="modal-head">
+        <h3 id="modal-title">عنوان</h3>
+        <button class="btn-close" id="modal-close">×</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-foot" id="modal-foot"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Update banner -->
+  <div id="update-banner" class="update-banner hidden">
+    <span id="update-text"></span>
+    <button id="btn-update-action" class="btn btn-primary"></button>
+  </div>
+
+  <script src="vendor/chart.umd.js"></script>
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

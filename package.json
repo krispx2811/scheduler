@@ -1,0 +1,93 @@
+{
+  "name": "scheduler",
+  "version": "1.0.0",
+  "description": "Scheduler — personal productivity dashboard for tasks, meetings, team follow-ups and notes",
+  "main": "main.js",
+  "author": {
+    "name": "Scheduler",
+    "email": "scheduler@local"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "homepage": "https://localhost/khalid-dashboard",
+  "scripts": {
+    "postinstall": "node scripts/copy-vendor.js",
+    "start": "ELECTRON_RUN_AS_NODE= electron .",
+    "build:mac": "electron-builder --mac --dir",
+    "build:win": "electron-builder --win",
+    "build:winzip": "electron-builder --win dir",
+    "build": "electron-builder -mw",
+    "publish:win": "electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "chart.js": "^4.4.6",
+    "electron-updater": "^6.8.3"
+  },
+  "devDependencies": {
+    "electron": "^33.0.2",
+    "electron-builder": "^25.1.8",
+    "pngjs": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.scheduler.app",
+    "productName": "Scheduler",
+    "copyright": "Copyright © 2026 Scheduler. All rights reserved.",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "publisherName": "Scheduler"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Scheduler",
+      "uninstallDisplayName": "Scheduler",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Scheduler-${version}-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "Scheduler-${version}-portable.${ext}"
+    },
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png"
+    },
+    "extraMetadata": {
+      "description": "Scheduler — tasks, meetings, team follow-ups, and notes",
+      "author": "Scheduler"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "krispx2811",
+      "repo": "scheduler",
+      "releaseType": "release"
+    },
+    "asar": true
+  }
+}
