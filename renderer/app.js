@@ -41,6 +41,8 @@ const state = {
   selectedDate: new Date(),
   searchQuery: '',
   recording: null,
+  selectedTaskIds: new Set(),
+  lastClickedTaskId: null,
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -234,11 +236,84 @@ function renderTasks() {
   taskListEl.innerHTML = '';
   taskEmptyEl.classList.toggle('hidden', items.length > 0);
   for (const tk of items) taskListEl.appendChild(renderTaskItem(tk));
+  renderBulkBar();
+}
+
+// ---------- Bulk action bar ----------
+function renderBulkBar() {
+  let bar = document.getElementById('bulk-bar');
+  const count = state.selectedTaskIds.size;
+  if (count === 0) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'bulk-bar';
+    bar.className = 'bulk-bar';
+    document.body.appendChild(bar);
+  }
+  const isAr = I18N.getLang() === 'ar';
+  bar.innerHTML = `
+    <span class="bulk-bar-count">${count}</span>
+    <span>${isAr ? 'محدد' : 'selected'}</span>
+    <select id="bulk-priority" title="${isAr ? 'تغيير الأولوية' : 'Set priority'}">
+      <option value="">${isAr ? 'الأولوية…' : 'Priority…'}</option>
+      <option value="high">${t('stats.priority.high')}</option>
+      <option value="medium">${t('stats.priority.medium')}</option>
+      <option value="low">${t('stats.priority.low')}</option>
+    </select>
+    <input id="bulk-due" type="date" title="${isAr ? 'تاريخ الاستحقاق' : 'Due date'}">
+    <input id="bulk-tag" type="text" placeholder="${isAr ? '+ وسم' : '+ tag'}" size="10">
+    <button class="btn btn-danger" id="bulk-delete">${t('action.delete')}</button>
+    <button class="btn btn-outline" id="bulk-clear">${isAr ? 'إلغاء التحديد' : 'Clear'}</button>
+  `;
+  document.getElementById('bulk-priority').addEventListener('change', async (e) => {
+    const v = e.target.value;
+    if (!v) return;
+    selectedTasksForEach((tk) => { tk.priority = v; });
+    await persist(); renderTasks();
+  });
+  document.getElementById('bulk-due').addEventListener('change', async (e) => {
+    const v = e.target.value;
+    if (!v) return;
+    selectedTasksForEach((tk) => { tk.dueDate = v; });
+    await persist(); renderTasks();
+  });
+  document.getElementById('bulk-tag').addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    const v = e.target.value.trim();
+    if (!v) return;
+    selectedTasksForEach((tk) => {
+      tk.tags = tk.tags || [];
+      if (!tk.tags.includes(v)) tk.tags.push(v);
+    });
+    await persist(); renderTasks();
+    e.target.value = '';
+  });
+  document.getElementById('bulk-delete').addEventListener('click', () => {
+    const n = state.selectedTaskIds.size;
+    openModal(t('modal.delete.title'), `<p>${isAr ? `هل تريد حذف ${n} مهمة؟ لا يمكن التراجع.` : `Delete ${n} tasks? This cannot be undone.`}</p>`, [
+      { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
+      { label: t('action.delete'), class: 'btn-danger', onClick: async () => {
+          closeModal();
+          state.data.tasks = state.data.tasks.filter((x) => !state.selectedTaskIds.has(x.id));
+          state.selectedTaskIds.clear();
+          await persist(); renderAll();
+          toast(isAr ? `تم حذف ${n} مهمة` : `${n} tasks deleted`);
+      }},
+    ]);
+  });
+  document.getElementById('bulk-clear').addEventListener('click', () => {
+    state.selectedTaskIds.clear();
+    renderTasks();
+  });
+}
+function selectedTasksForEach(fn) {
+  for (const tk of state.data.tasks) if (state.selectedTaskIds.has(tk.id)) fn(tk);
 }
 
 function renderTaskItem(tk) {
   const li = document.createElement('li');
   li.className = 'task-item priority-' + (tk.priority || 'medium');
+  if (state.selectedTaskIds.has(tk.id)) li.classList.add('selected');
   li.draggable = true;
   li.dataset.id = tk.id;
 
@@ -278,6 +353,28 @@ function renderTaskItem(tk) {
 
   li.querySelector('.task-checkbox').addEventListener('change', async (e) => {
     tk.status = e.target.checked ? 'done' : 'pending'; await persist(); renderAll();
+  });
+
+  // Bulk-select: Ctrl/Cmd-click toggles, Shift-click selects range
+  li.addEventListener('click', (e) => {
+    if (e.target.closest('input, button, a, label, .subtask')) return;
+    if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return;
+    e.preventDefault();
+    if (e.shiftKey && state.lastClickedTaskId) {
+      const ids = filteredTasks().map((x) => x.id);
+      const a = ids.indexOf(state.lastClickedTaskId);
+      const b = ids.indexOf(tk.id);
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        for (let i = lo; i <= hi; i++) state.selectedTaskIds.add(ids[i]);
+      }
+    } else {
+      if (state.selectedTaskIds.has(tk.id)) state.selectedTaskIds.delete(tk.id);
+      else state.selectedTaskIds.add(tk.id);
+    }
+    state.lastClickedTaskId = tk.id;
+    renderTasks();
+    renderBulkBar();
   });
   li.querySelectorAll('input[data-sub]').forEach((cb) => {
     cb.addEventListener('change', async (e) => {
@@ -330,7 +427,7 @@ function openTaskModal(task) {
           <option value="high" ${tk.priority==='high'?'selected':''}>${t('stats.priority.high')}</option>
         </select>
       </div>
-      <div class="field"><label>${t('form.dueDate')}</label><input id="f-due" type="date" value="${tk.dueDate || ''}"></div>
+      <div class="field"><label>${t('form.dueDate')}</label><input id="f-due" type="date" value="${tk.dueDate || ''}"><div id="task-workload-warning"></div></div>
     </div>
     <div class="field-row">
       <div class="field"><label>${t('form.tags')}</label><input id="f-tags" type="text" value="${escapeAttr((tk.tags || []).join(', '))}" placeholder="${escapeAttr(t('form.tags.placeholder'))}"></div>
@@ -382,6 +479,21 @@ function openTaskModal(task) {
     attachSubtaskRemovers(list);
   });
   attachSubtaskRemovers(list);
+
+  // Workload warning when due date is on a busy day
+  const wWarn = document.getElementById('task-workload-warning');
+  const refreshWorkload = () => {
+    const d = document.getElementById('f-due').value;
+    if (!d) { wWarn.innerHTML = ''; return; }
+    const count = countTasksOnDate(d, task?.id);
+    if (count < 5) { wWarn.innerHTML = ''; return; }
+    wWarn.innerHTML = `<div class="warning-box" style="margin-top:8px;">
+      <div class="warning-box-title">${t('conflict.task.title')}</div>
+      <div>${t('conflict.task.body', { n: count })}</div>
+    </div>`;
+  };
+  document.getElementById('f-due').addEventListener('input', refreshWorkload);
+  refreshWorkload();
 }
 
 function subtaskEditorHTML(id, title, done = false) {
@@ -508,6 +620,7 @@ function openMeetingModal(meeting) {
       <div class="field"><label>${t('form.start')}</label><input id="f-start" type="datetime-local" value="${(m.start || '').slice(0,16)}"></div>
       <div class="field"><label>${t('form.end')}</label><input id="f-end" type="datetime-local" value="${(m.end || '').slice(0,16)}"></div>
     </div>
+    <div id="meeting-conflict-warning"></div>
     <div class="field-row">
       <div class="field"><label>${t('form.location')}</label><input id="f-location" type="text" value="${escapeAttr(m.location || '')}"></div>
       <div class="field"><label>${t('form.attendees')}</label><input id="f-attendees" type="text" value="${escapeAttr(m.attendees || '')}" placeholder="${escapeAttr(t('form.attendees.placeholder'))}"></div>
@@ -546,6 +659,22 @@ function openMeetingModal(meeting) {
   document.querySelectorAll('#existing-files [data-rm]').forEach((b) => {
     b.onclick = () => { removedAttachmentIdx.add(parseInt(b.dataset.rm, 10)); b.parentElement.remove(); };
   });
+
+  // Live conflict detection
+  const warn = document.getElementById('meeting-conflict-warning');
+  const refreshConflicts = () => {
+    const startV = document.getElementById('f-start').value;
+    const endV = document.getElementById('f-end').value;
+    const conflicts = findMeetingConflicts(startV, endV, meeting?.id);
+    if (!conflicts.length) { warn.innerHTML = ''; return; }
+    warn.innerHTML = `<div class="warning-box">
+      <div class="warning-box-title">${t('conflict.meeting.title')}</div>
+      ${conflicts.map((c) => `<div>• ${escapeHTML(c.title)} (${fmtTime(c.start)}${c.end ? ' – ' + fmtTime(c.end) : ''})</div>`).join('')}
+    </div>`;
+  };
+  document.getElementById('f-start').addEventListener('input', refreshConflicts);
+  document.getElementById('f-end').addEventListener('input', refreshConflicts);
+  refreshConflicts();
 }
 
 function readFileAsDataURL(file) {
@@ -646,7 +775,7 @@ function renderNoteItem(n) {
   li.innerHTML = `
     <div style="flex:1; min-width:0;">
       <h4>${escapeHTML(n.title || t('notes.default'))}</h4>
-      ${n.body ? `<div class="note-meta" style="white-space:pre-wrap; margin-top:4px;">${escapeHTML(n.body)}</div>` : ''}
+      ${n.body ? `<div class="note-body">${renderMarkdown(n.body)}</div>` : ''}
       ${audioHTML}
       <div class="note-meta" style="margin-top:10px; color: var(--text-muted); font-size: 12px;">${fmtDateTime(n.createdAt)}</div>
     </div>
@@ -655,6 +784,15 @@ function renderNoteItem(n) {
       <button class="text-btn text-btn-danger" data-action="delete">${t('action.delete')}</button>
     </div>
   `;
+  // Wiki-link click → open or create that note
+  li.querySelectorAll('a.wikilink').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const href = a.getAttribute('href') || '';
+      const title = decodeURIComponent(href.replace(/^#wiki:/, ''));
+      openWikiNote(title);
+    });
+  });
   const editBtn = li.querySelector('[data-action="edit"]');
   if (editBtn) editBtn.addEventListener('click', () => openNoteModal(n));
   li.querySelector('[data-action="delete"]').addEventListener('click', () => confirmDelete('note', async () => {
@@ -669,7 +807,11 @@ function openNoteModal(n) {
   const obj = n || { title: '', body: '' };
   openModal(isEdit ? t('modal.note.edit') : t('modal.note.add'), `
     <div class="field"><label>${t('form.title')}</label><input id="f-title" type="text" value="${escapeAttr(obj.title || '')}"></div>
-    <div class="field"><label>${t('form.body')}</label><textarea id="f-body" style="min-height:140px;">${escapeHTML(obj.body || '')}</textarea></div>
+    <div class="field">
+      <label>${t('form.body')}</label>
+      <textarea id="f-body" style="min-height:180px; font-family: 'Menlo','Consolas',monospace; font-size: 13px;">${escapeHTML(obj.body || '')}</textarea>
+      <div class="field-hint">${t('form.body.hint')}</div>
+    </div>
   `, [
     { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
     { label: isEdit ? t('action.save') : t('action.add'), class: 'btn-primary', onClick: async () => {
@@ -931,6 +1073,71 @@ function confirmDelete(labelKey, onConfirm) {
 function escapeHTML(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 function escapeAttr(s) { return escapeHTML(s); }
 function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Markdown + [[wiki-link]] rendering. Wiki-links resolve to existing notes
+// (case-insensitive title match); clicking an unresolved link offers to create.
+function renderMarkdown(text) {
+  if (!text) return '';
+  if (typeof marked === 'undefined') return escapeHTML(text);
+  // Pre-process: turn [[Note Title]] into a wiki-link tag the renderer will style.
+  const withWikiLinks = String(text).replace(/\[\[([^\]\n]+)\]\]/g, (_, title) => {
+    const trimmed = title.trim();
+    const note = findNoteByTitle(trimmed);
+    const cls = note ? 'wikilink' : 'wikilink wikilink-missing';
+    return `[${trimmed}](#wiki:${encodeURIComponent(trimmed)} "${cls}")`;
+  });
+  const html = marked.parse(withWikiLinks, { breaks: true, gfm: true, mangle: false, headerIds: false });
+  // Promote our marker into a real class= attribute and strip any <script>.
+  return html
+    .replace(/<a (href="#wiki:[^"]+") title="(wikilink[^"]*)"/g, '<a $1 class="$2"')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
+}
+
+// ---------- Conflict detection ----------
+const DEFAULT_MEETING_MIN = 30;
+function findMeetingConflicts(startStr, endStr, excludeId) {
+  if (!startStr) return [];
+  const ns = new Date(startStr).getTime();
+  const ne = endStr ? new Date(endStr).getTime() : ns + DEFAULT_MEETING_MIN * 60_000;
+  return state.data.meetings.filter((m) => {
+    if (m.id === excludeId) return false;
+    const s = new Date(m.start).getTime();
+    const e = m.end ? new Date(m.end).getTime() : s + DEFAULT_MEETING_MIN * 60_000;
+    return ns < e && ne > s;
+  });
+}
+function countTasksOnDate(dateStr, excludeId) {
+  return state.data.tasks.filter((t) => t.dueDate === dateStr && t.id !== excludeId && t.status !== 'done').length;
+}
+
+function findNoteByTitle(title) {
+  const norm = (s) => (s || '').trim().toLowerCase();
+  const target = norm(title);
+  return state.data.notes.find((n) => norm(n.title) === target);
+}
+
+function openWikiNote(title) {
+  switchTab('notes');
+  let note = findNoteByTitle(title);
+  if (!note) {
+    // Offer to create
+    openModal(t('modal.note.add'), `
+      <p>${escapeHTML(title)} — ${I18N.getLang() === 'ar' ? 'لا توجد ملاحظة بهذا العنوان. هل تريد إنشاؤها؟' : "doesn't exist. Create it?"}</p>
+    `, [
+      { label: t('action.cancel'), class: 'btn-outline', onClick: closeModal },
+      { label: t('action.add'), class: 'btn-primary', onClick: async () => {
+          const newNote = { id: uid(), title, body: '', createdAt: new Date().toISOString() };
+          state.data.notes.push(newNote);
+          await persist();
+          closeModal();
+          renderAll();
+          openNoteModal(newNote);
+      }},
+    ]);
+    return;
+  }
+  openNoteModal(note);
+}
 
 // ============================================================
 // AUTO-UPDATE UI (driven by main process)

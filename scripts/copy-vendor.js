@@ -11,6 +11,10 @@ const copies = [
     from: path.join(__dirname, '..', 'node_modules', 'chart.js', 'dist', 'chart.umd.js'),
     to: path.join(vendorDir, 'chart.umd.js'),
   },
+  {
+    from: path.join(__dirname, '..', 'node_modules', 'marked', 'lib', 'marked.umd.js'),
+    to: path.join(vendorDir, 'marked.umd.js'),
+  },
 ];
 
 for (const { from, to } of copies) {

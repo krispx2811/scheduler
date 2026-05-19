@@ -1,6 +1,6 @@
 {
   "name": "scheduler",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Scheduler — personal productivity dashboard for tasks, meetings, team follow-ups and notes",
   "main": "main.js",
   "author": {
@@ -21,7 +21,8 @@
   },
   "dependencies": {
     "chart.js": "^4.4.6",
-    "electron-updater": "^6.8.3"
+    "electron-updater": "^6.8.3",
+    "marked": "^18.0.4"
   },
   "devDependencies": {
     "electron": "^33.0.2",
