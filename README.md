@@ -28,15 +28,29 @@ Built with **Electron + vanilla JS**. No frameworks, no build step for the UI, n
 
 ## Features
 
-- **Tasks** — title, description, priority (high / medium / low), due dates, tags, subtask checklists, recurring tasks (daily / weekly / monthly), drag-and-drop reordering.
-- **Meetings** — month calendar with click-to-filter, file attachments, attendees, location, notes.
+### Core
+- **Tasks** — title, description, priority (high / medium / low), due dates, tags, subtask checklists, recurring tasks (daily / weekly / monthly), drag-and-drop reordering, **bulk multi-select** (Ctrl/Shift-click + bottom action bar for batch priority / due-date / tag / delete).
+- **Meetings** — month calendar with click-to-filter, file attachments, attendees, location, notes. **Smart conflict detection** warns when adding an overlapping time.
 - **Team follow-ups** — track open items per teammate with due dates and status.
-- **Notes** — text notes and recorded voice notes (uses the system microphone).
+- **Notes** — **Markdown-rich** (headings, bold, lists, code blocks, blockquotes, tables) with **`[[wiki-links]]`** between notes — click an unknown link to create the target note on the fly. Plus voice notes via the system microphone.
 - **Global search** — one search box hits tasks, meetings, follow-ups, and notes simultaneously.
+
+### Workspaces
+- **Projects** — top-level container for tasks/meetings/follow-ups/notes/expenses. Pick a project from the header dropdown to filter the entire app to that work. Eight color choices per project.
+- **Budget tracker** — log expenses with amount, currency, category, date, optional project link. Automatic monthly total + breakdown by category. Filter by this-month or all-time.
+
+### Insight
+- **Manager scorecard** — 6 colored KPI cards: meeting hours (7d), task completion rate (30d), avg follow-up close time, time spent on goals (tasks tagged `goal`), open tasks, overdue tasks. All KPIs respect the active project filter.
 - **Statistics** — three Chart.js charts: status breakdown, priority distribution, completed-in-last-7-days trend.
+- **Busy-day warning** — when scheduling a task on a day that already has 5+ pending tasks.
+
+### Sharing & export
+- **Share daily standup** — one click generates a self-contained, styled HTML page of today's tasks/meetings/follow-ups. Save it locally, email it, or upload to any cloud storage for a public link.
+- **Print-friendly daily briefing** — built-in print view.
+- **Export** — JSON (full backup including attachments and audio) or CSV/Excel (UTF-8 BOM for clean Arabic in Excel).
 - **Desktop notifications** — fires when a task is due today or a meeting is within 15 minutes.
-- **Print-friendly daily briefing** — one-click print of today's tasks, meetings, and open follow-ups.
-- **Export** — JSON (full backup including attachments and audio) or CSV/Excel (UTF-8 with BOM, opens cleanly in Excel).
+
+### Polish
 - **Bilingual** — full Arabic (RTL) and English (LTR) modes, swap with one click.
 - **Light + dark theme** — both Claude-inspired palettes; remembered across restarts.
 - **Auto-updates** — checks GitHub Releases on launch and every 4 hours; downloads in the background; prompts to restart when ready.
@@ -46,9 +60,13 @@ Built with **Electron + vanilla JS**. No frameworks, no build step for the UI, n
 <details open>
 <summary><strong>Dark mode — English</strong></summary>
 
-| Tasks | Meetings | Statistics |
+| Tasks | Meetings | Scorecard |
 |---|---|---|
-| <img src="docs/screenshots/tasks-en-dark.png" alt="Tasks (dark, EN)" /> | <img src="docs/screenshots/meetings-en-dark.png" alt="Meetings (dark, EN)" /> | <img src="docs/screenshots/stats-en-dark.png" alt="Statistics (dark, EN)" /> |
+| <img src="docs/screenshots/tasks-en-dark.png" alt="Tasks (dark, EN)" /> | <img src="docs/screenshots/meetings-en-dark.png" alt="Meetings (dark, EN)" /> | <img src="docs/screenshots/scorecard-en-dark.png" alt="Scorecard (dark, EN)" /> |
+
+| Projects | Budget | Markdown notes |
+|---|---|---|
+| <img src="docs/screenshots/projects-en-dark.png" alt="Projects (dark, EN)" /> | <img src="docs/screenshots/budget-en-dark.png" alt="Budget (dark, EN)" /> | <img src="docs/screenshots/notes-markdown.png" alt="Markdown notes (dark, EN)" /> |
 
 </details>
 
@@ -92,6 +110,7 @@ No accounts, no servers — it just polls the GitHub Releases API for public rep
 | UI | Vanilla JS + HTML + CSS — no React/Vue/build step |
 | Storage | JSON file in `app.getPath('userData')` via Electron `ipcMain` |
 | Charts | Chart.js 4 (bundled, offline) |
+| Markdown | marked 18 (bundled, offline) + custom `[[wiki-link]]` extension |
 | i18n | Hand-rolled dictionary at [renderer/i18n.js](renderer/i18n.js), AR ↔ EN |
 | Theme | CSS custom properties + `[data-theme="light"/"dark"]` |
 | Updates | `electron-updater` + GitHub Releases provider |
@@ -100,19 +119,20 @@ No accounts, no servers — it just polls the GitHub Releases API for public rep
 ## Project structure
 
 ```
-├── main.js              Electron main process — IPC, storage, auto-updater
+├── main.js              Electron main process — IPC, storage, auto-updater, share/save
 ├── preload.js           Context-bridge between main and renderer
 ├── renderer/
 │   ├── index.html       Single-page UI with [data-i18n] hooks
 │   ├── styles.css       Theme system (dark + light), responsive layout
-│   ├── app.js           All UI logic — tasks, meetings, search, charts, etc.
-│   ├── i18n.js          Translation dictionary + t() helper
-│   └── vendor/          Bundled Chart.js (copied from node_modules at install)
+│   ├── app.js           All UI logic — tasks, meetings, projects, budget, scorecard, etc.
+│   ├── i18n.js          Translation dictionary (AR + EN) + t() helper
+│   └── vendor/          Bundled Chart.js + marked (copied from node_modules at install)
 ├── scripts/
-│   ├── copy-vendor.js   postinstall — places chart.umd.js into renderer/vendor
+│   ├── copy-vendor.js   postinstall — copies third-party libs into renderer/vendor
 │   └── make-icon.js     Generates the app icon at build/icon.png
 ├── build/
 │   └── icon.png         512x512 brand icon (electron-builder converts to .ico/.icns)
+├── docs/screenshots/    Screenshots shown in this README
 └── package.json         Dependencies + electron-builder config + publish target
 ```
 
@@ -147,7 +167,9 @@ npm run build:win
 - macOS + Linux installer targets (only Windows is published today)
 - Cloud sync between devices (currently local-only by design)
 - Code-signing the .exe to remove the SmartScreen prompt — requires a paid certificate
-- Markdown rendering in notes
+- One-on-one workspace per team member (rolling 1:1 agenda)
+- Goals / OKRs section linked to tasks
+- Inbox / quick-capture global hotkey
 - Calendar export to `.ics`
 
 ## License
